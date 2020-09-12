@@ -25,20 +25,26 @@ SOFTWARE.
 
 #pragma once
 
+
 //
 // Internal engine instance properties
 //
 typedef struct _INDICIUM_ENGINE
 {
     //
+    // Host module instance handle
+    // 
+    HMODULE HostInstance;
+
+    //
     // Detected Direct3D version the host process is using to render
     //
     INDICIUM_D3D_VERSION GameVersion;
 
     //
-    // Callback to be invoked once the render pipeline has been hooked
-    //
-    PFN_INDICIUM_GAME_HOOKED EvtIndiciumGameHooked;
+    // Requested configuration at engine creation
+    // 
+    INDICIUM_ENGINE_CONFIG EngineConfig;
 
     //
     // Direct3D 9(Ex) specific render pipeline callbacks
@@ -61,6 +67,11 @@ typedef struct _INDICIUM_ENGINE
     INDICIUM_D3D12_EVENT_CALLBACKS EventsD3D12;
 
     //
+    // Core Audio (Audio Render Client) specific callbacks
+    // 
+    INDICIUM_ARC_EVENT_CALLBACKS EventsARC;
+
+    //
     // Handle to main worker thread holding the hooks
     //
     HANDLE EngineThread;
@@ -70,11 +81,32 @@ typedef struct _INDICIUM_ENGINE
     //
     HANDLE EngineCancellationEvent;
 
+    //
+    // Custom context data traveling along with this instance
+    // 
+    PVOID CustomContext;
+
+    union
+    {
+        IDXGISwapChain* pSwapChain;
+
+        LPDIRECT3DDEVICE9 pD3D9Device;
+
+        LPDIRECT3DDEVICE9EX pD3D9ExDevice;
+
+    } RenderPipeline;
+
+    struct
+    {
+        IAudioRenderClient *pARC;
+
+    } CoreAudio;
+
 } INDICIUM_ENGINE;
 
 #define INVOKE_INDICIUM_GAME_HOOKED(_engine_, _version_)    \
-                                    (_engine_->EvtIndiciumGameHooked ? \
-                                    _engine_->EvtIndiciumGameHooked(_version_) : \
+                                    (_engine_->EngineConfig.EvtIndiciumGameHooked ? \
+                                    _engine_->EngineConfig.EvtIndiciumGameHooked(_engine_, _version_) : \
                                     (void)0)
 
 #define INVOKE_D3D9_CALLBACK(_engine_, _callback_, ...)     \
@@ -95,4 +127,9 @@ typedef struct _INDICIUM_ENGINE
 #define INVOKE_D3D12_CALLBACK(_engine_, _callback_, ...)     \
                              (_engine_->EventsD3D12._callback_ ? \
                              _engine_->EventsD3D12._callback_(##__VA_ARGS__) : \
+                             (void)0)
+
+#define INVOKE_ARC_CALLBACK(_engine_, _callback_, ...)     \
+                             (_engine_->EventsARC._callback_ ? \
+                             _engine_->EventsARC._callback_(##__VA_ARGS__) : \
                              (void)0)

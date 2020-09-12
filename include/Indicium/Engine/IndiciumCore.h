@@ -45,7 +45,14 @@ extern "C" {
     {
         INDICIUM_ERROR_NONE = 0x20000000,
         INDICIUM_ERROR_INVALID_ENGINE_HANDLE = 0xE0000001,
-        INDICIUM_ERROR_CREATE_THREAD_FAILED = 0xE0000002
+        INDICIUM_ERROR_CREATE_THREAD_FAILED = 0xE0000002,
+        INDICIUM_ERROR_ENGINE_ALLOCATION_FAILED = 0xE0000003,
+        INDICIUM_ERROR_ENGINE_ALREADY_ALLOCATED = 0xE0000004,
+        INDICIUM_ERROR_INVALID_HMODULE_HANDLE = 0xE0000005,
+        INDICIUM_ERROR_REFERENCE_INCREMENT_FAILED = 0xE0000006,
+        INDICIUM_ERROR_CONTEXT_ALLOCATION_FAILED = 0xE0000007,
+		INDICIUM_ERROR_CREATE_EVENT_FAILED = 0xE0000008,
+
     } INDICIUM_ERROR;
 
     typedef enum _INDICIUM_D3D_VERSION {
@@ -68,11 +75,95 @@ extern "C" {
     typedef struct _INDICIUM_D3D10_EVENT_CALLBACKS *PINDICIUM_D3D10_EVENT_CALLBACKS;
     typedef struct _INDICIUM_D3D11_EVENT_CALLBACKS *PINDICIUM_D3D11_EVENT_CALLBACKS;
     typedef struct _INDICIUM_D3D12_EVENT_CALLBACKS *PINDICIUM_D3D12_EVENT_CALLBACKS;
+    typedef struct _INDICIUM_ARC_EVENT_CALLBACKS *PINDICIUM_ARC_EVENT_CALLBACKS;
+
+    typedef struct _INDICIUM_EVT_PRE_EXTENSION
+    {
+        //
+        // Internal engine handle
+        // 
+        PINDICIUM_ENGINE    Engine;
+
+        //
+        // Custom context memory (if any, might be NULL)
+        // 
+        PVOID               Context;
+
+    } INDICIUM_EVT_PRE_EXTENSION, *PINDICIUM_EVT_PRE_EXTENSION;
+
+    /**
+     * \fn  VOID FORCEINLINE INDICIUM_EVT_PRE_EXTENSION_INIT( PINDICIUM_EVT_PRE_EXTENSION Extension, PINDICIUM_ENGINE Engine, PVOID Context )
+     *
+     * \brief   Indicium event pre extension initialize
+     *
+     * \author  Benjamin Höglinger-Stelzer
+     * \date    20.08.2019
+     *
+     * \param   Extension   The extension.
+     * \param   Engine      The engine.
+     * \param   Context     The context.
+     *
+     * \returns A FORCEINLINE.
+     */
+    VOID FORCEINLINE INDICIUM_EVT_PRE_EXTENSION_INIT(
+        PINDICIUM_EVT_PRE_EXTENSION Extension,
+        PINDICIUM_ENGINE Engine,
+        PVOID Context
+    )
+    {
+        ZeroMemory(Extension, sizeof(INDICIUM_EVT_PRE_EXTENSION));
+
+        Extension->Engine = Engine;
+        Extension->Context = Context;
+    }
+
+    typedef struct _INDICIUM_EVT_POST_EXTENSION
+    {
+        //
+        // Internal engine handle
+        // 
+        PINDICIUM_ENGINE    Engine;
+
+        //
+        // Custom context memory (if any, might be NULL)
+        // 
+        PVOID               Context;
+
+    } INDICIUM_EVT_POST_EXTENSION, *PINDICIUM_EVT_POST_EXTENSION;
+
+    /**
+     * \fn  VOID FORCEINLINE INDICIUM_EVT_POST_EXTENSION_INIT( PINDICIUM_EVT_POST_EXTENSION Extension, PINDICIUM_ENGINE Engine, PVOID Context )
+     *
+     * \brief   Indicium event post extension initialize
+     *
+     * \author  Benjamin Höglinger-Stelzer
+     * \date    20.08.2019
+     *
+     * \param   Extension   The extension.
+     * \param   Engine      The engine.
+     * \param   Context     The native result.
+     *
+     * \returns A FORCEINLINE.
+     *
+     * ### param    NativeResult    The native result.
+     */
+    VOID FORCEINLINE INDICIUM_EVT_POST_EXTENSION_INIT(
+        PINDICIUM_EVT_POST_EXTENSION Extension,
+        PINDICIUM_ENGINE Engine,
+        PVOID Context
+    )
+    {
+        ZeroMemory(Extension, sizeof(INDICIUM_EVT_POST_EXTENSION));
+
+        Extension->Engine = Engine;
+        Extension->Context = Context;
+    }
 
     typedef
         _Function_class_(EVT_INDICIUM_GAME_HOOKED)
         VOID
         EVT_INDICIUM_GAME_HOOKED(
+            PINDICIUM_ENGINE EngineHandle,
             const INDICIUM_D3D_VERSION GameVersion
         );
 
@@ -81,80 +172,211 @@ extern "C" {
     typedef
         _Function_class_(EVT_INDICIUM_GAME_UNHOOKED)
         VOID
-        EVT_INDICIUM_GAME_UNHOOKED();
+        EVT_INDICIUM_GAME_UNHOOKED(
+            PINDICIUM_ENGINE EngineHandle
+        );
 
     typedef EVT_INDICIUM_GAME_UNHOOKED *PFN_INDICIUM_GAME_UNHOOKED;
 
-    /**
-     * \fn  INDICIUM_API PINDICIUM_ENGINE IndiciumEngineAlloc(void);
-     *
-     * \brief   Allocates memory for a new Indicium engine instance.
-     *
-     * \author  Benjamin Höglinger-Stelzer
-     * \date    05.05.2019
-     *
-     * \returns A handle to the newly allocated engine.
-     */
-    INDICIUM_API PINDICIUM_ENGINE IndiciumEngineAlloc(void);
+    typedef
+        _Function_class_(EVT_INDICIUM_GAME_EXIT)
+        VOID
+        EVT_INDICIUM_GAME_EXIT(
+            PINDICIUM_ENGINE EngineHandle
+        );
+
+    typedef EVT_INDICIUM_GAME_EXIT *PFN_INDICIUM_GAME_EXIT;
+
+    typedef struct _INDICIUM_ENGINE_CONFIG
+    {
+        //
+        // Event callback invoked once a requested render API has been hooked successfully
+        // 
+        PFN_INDICIUM_GAME_HOOKED EvtIndiciumGameHooked;
+
+        //
+        // Event callback invoked prior to unhooking the render API
+        // 
+        PFN_INDICIUM_GAME_UNHOOKED EvtIndiciumGamePreUnhook;
+
+        //
+        // Event callback invoked after render API has been unhooked
+        // 
+        PFN_INDICIUM_GAME_UNHOOKED EvtIndiciumGamePostUnhook;
+
+        //
+        // Event callback invoked when host process shutdown has been detected
+        // 
+        PFN_INDICIUM_GAME_EXIT EvtIndiciumGamePreExit;
+
+        struct
+        {
+            //
+            // Enables detection and hooking of Direct3D 9 render pipeline, if used by host process
+            // 
+            BOOL HookDirect3D9;
+
+            //
+            // Enables detection and hooking of Direct3D 10 render pipeline, if used by host process
+            // 
+            BOOL HookDirect3D10;
+
+            //
+            // Enables detection and hooking of Direct3D 11 render pipeline, if used by host process
+            // 
+            BOOL HookDirect3D11;
+
+            //
+            // Enables detection and hooking of Direct3D 12 render pipeline, if used by host process
+            // 
+            BOOL HookDirect3D12;
+
+        } Direct3D;
+
+        struct
+        {
+        	//
+        	// Enables hooking relevant Core Audio APIs
+        	// 
+            BOOL HookCoreAudio;
+
+        } CoreAudio;
+
+        struct
+        {
+        	//
+        	// TRUE if log file should be generated, FALSE otherwise
+        	// 
+            BOOL IsEnabled;
+
+        	//
+        	// Full path and name to log file
+        	// 
+            PCSTR FilePath;
+
+        } Logging;
+
+    } INDICIUM_ENGINE_CONFIG, *PINDICIUM_ENGINE_CONFIG;
 
     /**
-     * \fn  INDICIUM_API INDICIUM_ERROR IndiciumEngineInit( _In_ PINDICIUM_ENGINE Engine, _In_opt_ PFN_INDICIUM_GAME_HOOKED EvtIndiciumGameHooked );
+     * \fn  VOID FORCEINLINE INDICIUM_ENGINE_CONFIG_INIT( PINDICIUM_ENGINE_CONFIG EngineConfig )
      *
-     * \brief   Initializes the Indicium engine. Attempts too hook into the host process's render
-     *          pipeline and optionally notifies the caller once the hooks are in place.
+     * \brief   Initializes an INDICIUM_ENGINE_CONFIG struct.
      *
      * \author  Benjamin Höglinger-Stelzer
-     * \date    05.05.2019
+     * \date    30.07.2019
      *
-     * \param   Engine                  The previously allocated engine handle.
-     * \param   EvtIndiciumGameHooked   The optional callback invoked once the render pipeline has
-     *                                  been hooked.
+     * \param   EngineConfig    The engine configuration.
+     *
+     * \returns Nothing.
+     */
+    VOID FORCEINLINE INDICIUM_ENGINE_CONFIG_INIT(
+        PINDICIUM_ENGINE_CONFIG EngineConfig
+    )
+    {
+        ZeroMemory(EngineConfig, sizeof(INDICIUM_ENGINE_CONFIG));
+
+        EngineConfig->Logging.IsEnabled = TRUE;
+        EngineConfig->Logging.FilePath = "%TEMP%\\Indicium-Supra.log";
+    }
+
+    /**
+     * \fn  INDICIUM_API INDICIUM_ERROR IndiciumEngineCreate( _In_ HMODULE HostInstance, _In_ PINDICIUM_ENGINE_CONFIG EngineConfig, _Out_opt_ PINDICIUM_ENGINE* Engine );
+     *
+     * \brief   Initializes the Indicium engine. Attempts too hook into the host process's render
+     *          pipeline and optionally notifies the caller about progress via callbacks provided in
+     *          INDICIUM_ENGINE_CONFIG struct. Calling this function is expected to happen in
+     *          DllMain() at DLL_PROCESS_ATTACH.
+     *
+     * \author  Benjamin Höglinger-Stelzer
+     * \date    01.08.2019
+     *
+     * \param           HostInstance    The host instance handle.
+     * \param           EngineConfig    The engine configuration.
+     * \param [in,out]  Engine          If non-null, the newly allocated engine handle.
      *
      * \returns An INDICIUM_ERROR.
      */
-    INDICIUM_API INDICIUM_ERROR IndiciumEngineInit(
-        _In_
-        PINDICIUM_ENGINE Engine,
-        _In_opt_
-        PFN_INDICIUM_GAME_HOOKED EvtIndiciumGameHooked
+    INDICIUM_API INDICIUM_ERROR IndiciumEngineCreate(
+        _In_ HMODULE HostInstance,
+        _In_ PINDICIUM_ENGINE_CONFIG EngineConfig,
+        _Out_opt_ PINDICIUM_ENGINE* Engine
     );
 
     /**
-     * \fn  INDICIUM_API VOID IndiciumEngineShutdown( _In_ PINDICIUM_ENGINE Engine, _In_opt_ PFN_INDICIUM_GAME_UNHOOKED EvtIndiciumGameUnhooked );
+     * \fn  INDICIUM_API INDICIUM_ERROR IndiciumEngineDestroy( _In_ HMODULE HostInstance );
      *
-     * \brief   Gracefully shuts down the Indicium engine, unhooking from the render pipeline during
-     *          runtime. After this call, the engine can either be initialized once again or the
-     *          handle must be freed with IndiciumEngineFree.
+     * \brief   Frees all resources internally used by the engine. Reverts all established hooks and
+     *          invokes the shutdown event callbacks. Calling this function is expected to happen in
+     *          DllMain() at DLL_PROCESS_DETACH.
      *
      * \author  Benjamin Höglinger-Stelzer
-     * \date    05.05.2019
+     * \date    02.08.2019
      *
-     * \param   Engine                  The engine handle.
-     * \param   EvtIndiciumGameUnhooked The optional callback invoked once the render pipeline has
-     *                                  been unhooked.
+     * \param   HostInstance    The host instance.
      *
-     * \returns Nothing.
+     * \returns An INDICIUM_ERROR.
      */
-    INDICIUM_API VOID IndiciumEngineShutdown(
-        _In_
-        PINDICIUM_ENGINE Engine,
-        _In_opt_
-        PFN_INDICIUM_GAME_UNHOOKED EvtIndiciumGameUnhooked
+    INDICIUM_API INDICIUM_ERROR IndiciumEngineDestroy(
+        _In_ HMODULE HostInstance
     );
 
     /**
-     * \fn  INDICIUM_API VOID IndiciumEngineFree( _In_ PINDICIUM_ENGINE Engine );
+     * \fn  INDICIUM_API INDICIUM_ERROR IndiciumEngineAllocCustomContext( _In_ PINDICIUM_ENGINE Engine, _Out_ PVOID* Context, _In_ size_t ContextSize );
      *
-     * \brief   Frees memory allocated by an Indicium engine handle.
+     * \brief   Allocates a custom sized chunk of memory which will be accessible from all event
+     *          callbacks during engine lifetime. Repeatedly calling this function will free
+     *          previously allocated context memory.
      *
      * \author  Benjamin Höglinger-Stelzer
-     * \date    05.05.2019
+     * \date    03.08.2019
      *
-     * \param   Engine  The engine handle to free.
+     * \param           Engine      The engine handle.
+     * \param [in,out]  Context     If non-null, pointer to the newly allocated context memory.
+     * \param           ContextSize Size of the context memory.
      *
-     * \returns Nothing.
+     * \returns An INDICIUM_ERROR.
      */
-    INDICIUM_API VOID IndiciumEngineFree(
+    INDICIUM_API INDICIUM_ERROR IndiciumEngineAllocCustomContext(
+        _In_
+        PINDICIUM_ENGINE Engine,
+        _Out_
+        PVOID* Context,
+        _In_
+        size_t ContextSize
+    );
+
+    /**
+     * \fn  INDICIUM_API INDICIUM_ERROR IndiciumEngineFreeCustomContext( _In_ PINDICIUM_ENGINE Engine );
+     *
+     * \brief   Frees custom context memory for the supplied engine handle, if any.
+     *
+     * \author  Benjamin Höglinger-Stelzer
+     * \date    03.08.2019
+     *
+     * \param   Engine  The engine handle.
+     *
+     * \returns An INDICIUM_ERROR.
+     */
+    INDICIUM_API INDICIUM_ERROR IndiciumEngineFreeCustomContext(
+        _In_
+        PINDICIUM_ENGINE Engine
+    );
+
+    /**
+     * \fn  INDICIUM_API PVOID IndiciumEngineGetCustomContext( _In_ PINDICIUM_ENGINE Engine );
+     *
+     * \brief   Returns a pointer to previously allocated custom context memory, or NULL if none
+     *          available.
+     *
+     * \author  Benjamin Höglinger-Stelzer
+     * \date    03.08.2019
+     *
+     * \param   Engine  The engine handle.
+     *
+     * \returns A PVOID.
+     */
+    INDICIUM_API PVOID IndiciumEngineGetCustomContext(
         _In_
         PINDICIUM_ENGINE Engine
     );
@@ -251,6 +473,17 @@ extern "C" {
         PINDICIUM_ENGINE Engine,
         _In_
         PINDICIUM_D3D12_EVENT_CALLBACKS Callbacks
+    );
+
+#endif
+
+#ifndef INDICIUM_NO_COREAUDIO
+
+    INDICIUM_API VOID IndiciumEngineSetARCEventCallbacks(
+        _In_
+        PINDICIUM_ENGINE Engine,
+        _In_
+        PINDICIUM_ARC_EVENT_CALLBACKS Callbacks
     );
 
 #endif
